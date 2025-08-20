@@ -19,10 +19,9 @@ No fancy features - just the basics working.
 
 ## 📁 Files
 
-- `config.sh` - Basic SSH and file path settings
-- `audio.sh` - Record audio, speech recognition, text-to-speech
-- `claude.sh` - SSH to dev machine and run Claude Code
-- `voice_assistant.sh` - Main script that ties it all together
+**Single integrated script:**
+- `termux_voice_code.sh` - Complete voice coding assistant with all functionality integrated
+- `config.sh` - Optional configuration file (auto-created if needed)
 
 ## 🚀 Setup
 
@@ -38,7 +37,7 @@ claude -p "hello world" --output-format json
 **In Termux:**
 ```bash
 # Install packages automatically
-./voice_coding_assistant.sh install
+./termux_voice_code.sh install
 
 # OR install manually
 pkg install openssh jq termux-api curl nano
@@ -47,33 +46,44 @@ pkg install openssh jq termux-api curl nano
 # Grant microphone permissions
 
 # Run complete setup wizard
-./voice_coding_assistant.sh setup
+./termux_voice_code.sh setup
 ```
 
 **Usage:**
 ```bash
-./voice_coding_assistant.sh
-# Press space to record, it handles the rest
+./termux_voice_code.sh
+# Press space to record, interactive TUI with controls
 ```
 
 ## 🔧 How It Works
 
 1. **Record**: `termux-microphone-record` captures audio to WAV file
-2. **Transcribe**: OpenAI Whisper API converts speech to text  
+2. **Transcribe**: Local whisper.cpp or OpenAI Whisper API converts speech to text  
 3. **Query**: SSH to dev machine and run `claude -p "transcription" --output-format json`
-4. **Speak**: `termux-tts-speak` reads the response aloud
-5. **Display**: Show any code blocks with basic formatting
+4. **Speak**: Local `termux-tts-speak` or OpenAI TTS reads the response aloud
+5. **Display**: Show responses and code blocks with basic formatting in a simple TUI
 
-That's it. No connection pools, no fancy TUI, no multi-user anything. Just a working voice coding assistant.
+Features integrated in the single script:
+- Interactive TUI with connection status and controls
+- Local/API audio processing options (toggleable)
+- Conversation history tracking
+- Configuration management (auto-creates config.sh)
+- Complete setup wizard with SSH key generation
 
 ## 🔧 Configuration Options
 
-### Advanced Audio Settings
-Edit `config.sh` to customize:
-- Recording timeout duration
-- TTS voice parameters (rate, pitch)
+### Configuration Options
+The script auto-creates `config.sh` with defaults, or you can edit it:
+```bash
+./termux_voice_code.sh config
+```
+
+Key settings:
+- SSH connection details (host, user, key path)
+- Claude Code installation path on dev machine
+- Local vs API processing for STT/TTS
 - Whisper model size (tiny, base, small, medium, large)
-- Audio file formats and quality
+- OpenAI API key for cloud processing
 
 ### SSH Optimization
 For faster connections, add to `~/.ssh/config`:

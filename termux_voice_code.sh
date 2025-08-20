@@ -277,10 +277,20 @@ query_claude() {
     local escaped_prompt
     escaped_prompt=$(printf '%q' "$prompt")
     
-    # Execute Claude Code on development machine
+    # Execute Claude Code on development machine with context about voice coding
+    local system_prompt
+    system_prompt=$(cat << 'EOF'
+You are being used through a voice coding assistant on Termux mobile terminal. 
+The user spoke their request, which was transcribed to text and sent to you via SSH. 
+Your response will be read aloud via text-to-speech and displayed on a small mobile screen. 
+Keep responses very concise, speak naturally as if talking directly to the user, 
+and limit code snippets to essential lines only due to limited screen space.
+EOF
+)
+    
     local claude_response
     claude_response=$(ssh -i "$SSH_KEY" "$DEV_HOST" \
-        "cd $DEV_CWD && $CLAUDE -p $escaped_prompt --output-format json" < /dev/null 2>/dev/null)
+        "cd $DEV_CWD && $CLAUDE --print $escaped_prompt --continue --permission-mode acceptEdits --output-format json --append-system-prompt '$system_prompt'" < /dev/null 2>/dev/null)
     
     if [[ $? -eq 0 && -n "$claude_response" ]]; then
         echo "$claude_response" > "$RESPONSE_FILE"
@@ -628,23 +638,9 @@ install_packages() {
     echo "Updating package lists..."
     pkg update
     
-    # Essential packages
-    local packages=(
-        "openssh"      # SSH client for dev machine connection
-        "jq"           # JSON parsing for Claude responses
-        "curl"         # API calls for OpenAI
-        "termux-api"   # Audio recording and TTS
-        "nano"         # Basic editor
-    )
-    
-    for package in "${packages[@]}"; do
-        if ! command -v "$package" >/dev/null 2>&1; then
-            echo "Installing $package..."
-            pkg install -y "$package"
-        else
-            echo "✅ $package already installed"
-        fi
-    done
+    # Install all essential packages in one command
+    echo "Installing packages: openssh, jq, curl, termux-api, nano..."
+    pkg install -y openssh jq curl termux-api nano
     
     # Check if Termux:API app is installed
     echo
