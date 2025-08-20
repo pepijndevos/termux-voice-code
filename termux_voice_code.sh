@@ -3,6 +3,7 @@
 # Single file version with all functionality included
 
 set -euo pipefail
+# set -x  # Enable debug tracing
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -100,7 +101,7 @@ speech_to_text() {
 
 # Local speech recognition using whisper.cpp
 local_speech_to_text() {
-    echo "🧠 Transcribing locally..."
+    echo "🧠 Transcribing locally..." >&2
     
     # Run whisper.cpp (adjust path as needed)
     if command -v whisper >/dev/null; then
@@ -117,16 +118,16 @@ local_speech_to_text() {
         fi
     fi
     
-    echo "❌ Local transcription failed"
+    echo "❌ Local transcription failed" >&2
     return 1
 }
 
 # API-based speech recognition
 api_speech_to_text() {
-    echo "🌐 Transcribing via API..."
+    echo "🌐 Transcribing via API..." >&2
     
     if [[ -z "$OPENAI_API_KEY" ]]; then
-        echo "❌ OpenAI API key not set"
+        echo "❌ OpenAI API key not set" >&2
         return 1
     fi
     
@@ -140,7 +141,7 @@ api_speech_to_text() {
         echo "$response" | jq -r '.text // empty'
         return 0
     else
-        echo "❌ API transcription failed"
+        echo "❌ API transcription failed" >&2
         return 1
     fi
 }
@@ -160,7 +161,7 @@ text_to_speech() {
 # Local text-to-speech using termux-tts-speak
 local_text_to_speech() {
     local text="$1"
-    echo "🔊 Speaking locally..."
+    echo "🔊 Speaking locally..." >&2
     
     termux-tts-speak "$text"
 }
@@ -168,10 +169,10 @@ local_text_to_speech() {
 # API-based text-to-speech
 api_text_to_speech() {
     local text="$1"
-    echo "🌐 Generating speech via API..."
+    echo "🌐 Generating speech via API..." >&2
     
     if [[ -z "$OPENAI_API_KEY" ]]; then
-        echo "❌ OpenAI API key not set"
+        echo "❌ OpenAI API key not set" >&2
         return 1
     fi
     
@@ -189,7 +190,7 @@ api_text_to_speech() {
         termux-media-player play "$TTS_FILE"
         return 0
     else
-        echo "❌ API TTS failed"
+        echo "❌ API TTS failed" >&2
         return 1
     fi
 }
@@ -270,7 +271,7 @@ query_claude() {
     local prompt="$1"
     [[ -z "$prompt" ]] && return 1
     
-    echo "🤖 Querying Claude Code..."
+    echo "🤖 Querying Claude Code..." >&2
     
     # Escape quotes in prompt for SSH command
     local escaped_prompt
@@ -285,7 +286,7 @@ query_claude() {
         echo "$claude_response" > "$RESPONSE_FILE"
         return 0
     else
-        echo "❌ Claude query failed"
+        echo "❌ Claude query failed" >&2
         return 1
     fi
 }
@@ -424,7 +425,7 @@ draw_interface() {
     audio_status=$(get_audio_status)
     
     echo "┌──────────────────────────────────────────┐"
-    echo "│        🎙️  Voice Coding Assistant        │"
+    echo "│           Voice Coding Assistant         │"
     echo "├──────────────────────────────────────────┤"
     echo "│ Status: $connection_status"
     echo "│ Audio:  $audio_status"
@@ -543,7 +544,7 @@ handle_voice_command() {
 # Cleanup on exit
 cleanup() {
     show_cursor
-    clear_screen
+    #clear_screen
     echo "👋 Voice coding assistant closed"
     
     # Clean up temp files
