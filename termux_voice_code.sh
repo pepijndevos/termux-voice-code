@@ -213,10 +213,13 @@ test_audio() {
     # Test recording and transcription
     if record_audio; then
         local transcription
-        transcription=$(speech_to_text)
-        if [[ -n "$transcription" ]]; then
-            echo "Transcription: $transcription"
-            text_to_speech "I heard you say: $transcription"
+        if transcription=$(speech_to_text); then
+            if [[ -n "$transcription" ]]; then
+                echo "Transcription: $transcription"
+                text_to_speech "I heard you say: $transcription"
+            else
+                echo "❌ Transcription failed - empty result"
+            fi
         else
             echo "❌ Transcription failed"
         fi
@@ -284,7 +287,10 @@ query_claude() {
     # Execute Claude Code on development machine with context about voice coding
     local system_prompt
     system_prompt=$(cat << 'EOF'
-You are a voice coding assistant on Termux mobile terminal. The user speaks requests that get transcribed and sent via SSH. Your response is displayed visually and read aloud (except code blocks). The user has no code editor, so you must make all changes via available tools.
+You are a voice coding assistant on Termux mobile terminal.
+User speaks requests that get transcribed and sent via SSH.
+Your response is read aloud except code blocks then displayed visually.
+User has no code editor so you must make all changes via available tools.
 
 KEY GUIDELINES:
 - Keep responses conversational and concise (will be spoken aloud)
@@ -301,14 +307,39 @@ PLAN MODE - Analyze and propose without making changes:
 • High-level: Break complex requests into todo steps
 • Iterative: Show current code, propose one small change, ask confirmation
 
-EDIT MODE - Make actual code changes and show results
+EDIT MODE implements changes directly. Make the single requested change using tools. Briefly explain what was changed. Show the updated code at the end.
 
-Example workflow:
+EXAMPLES:
+
+Plan Mode:
 User: "Add password validation to login"
-Plan: "Found login function in auth.js. Currently it takes username and password parameters but only validates the username by calling check_user. If username is valid, it immediately returns true, ignoring the password completely. I can add a password comparison right after the username check, so both conditions must pass. Should I proceed?" + show current code  
-User: "Yes, simple comparison"
-Edit: "Added password validation. The function now first checks if the username exists using check_user, then also verifies the password matches our hardcoded value. Only if both the username is valid AND the password matches will it return true. If either check fails, it returns false." + show updated code
+Response: "Found the login function in auth.js line 45. Currently it calls validateUser but does not handle the password parameter at all, just returns true if username exists. I can add a simple password comparison right after the username check. Should I proceed?"
 
+```js
+function login(username, password) {
+    if (validateUser(username)) {
+        return true;  // ignores password completely
+    }
+    return false;
+}
+```
+
+Edit Mode:
+User: "Yes, add password check"
+Response: "Added password validation after username check. Now both username and password must be correct to return true."
+
+```js
+function login(username, password) {
+    if (validateUser(username) && password === "secret123") {
+        return true;
+    }
+    return false;
+}
+```
+
+If transcription is unclear, ask could you repeat that, I heard X but want to make sure.
+
+Remember no markdown formatting in spoken responses. Always put code blocks at the very end. Break complex requests into single small changes per interaction.
 EOF
 )
     
@@ -371,7 +402,7 @@ display_response() {
     
     # Use bat for markdown rendering if available
     if command -v bat >/dev/null; then
-        echo "$content" | bat --language=markdown --style=plain --theme=ansi
+        echo "$content" | bat --language=markdown --style=plain --theme=ansi --paging=never
     else
         echo "$content"
     fi
@@ -484,10 +515,13 @@ handle_voice_command() {
     
     # Transcribe
     local transcription
-    transcription=$(speech_to_text)
+    if ! transcription=$(speech_to_text); then
+        echo "❌ Transcription failed"
+        return 1
+    fi
     
     if [[ -z "$transcription" ]]; then
-        echo "❌ Transcription failed"
+        echo "❌ Transcription failed - empty result"
         return 1
     fi
     
@@ -523,8 +557,6 @@ cycle_permission_mode() {
             ;;
     esac
     
-    # Reset session when changing modes to avoid confusion
-    reset_claude_session
 }
 
 # Change working directory on dev machine
@@ -588,10 +620,10 @@ main_loop() {
         # Read user input (silent mode)
         read -s -n1
         case $REPLY in
-            ' ')  handle_voice_command ;;
-            'c')  change_directory ;;
-            'm')  cycle_permission_mode ;;
-            'r')  reset_claude_session ;;
+            ' ')  handle_voice_command || true ;;
+            'c')  change_directory || true ;;
+            'm')  cycle_permission_mode || true ;;
+            'r')  reset_claude_session || true ;;
             'q')  break ;;
             *)    
                 echo "Unknown command: '$REPLY' (Use SPACE, C, M, R, or Q)"
