@@ -41,7 +41,7 @@ TTS_RATE="1.0"   # 1.0 is normal speed, lower = slower, higher = faster
 
 # File locations
 TEMP_DIR="${TMPDIR:-$HOME/.voice_coding_temp}"
-AUDIO_FILE="$TEMP_DIR/recording.wav"
+AUDIO_FILE="$TEMP_DIR/recording.m4a"
 TRANSCRIPTION_FILE="$TEMP_DIR/transcription.txt"
 RESPONSE_FILE="$TEMP_DIR/claude_response.json"
 TTS_FILE="$TEMP_DIR/tts_output.mp3"
@@ -76,8 +76,9 @@ record_audio() {
     # Remove existing audio file if it exists
     rm -f "$AUDIO_FILE"
     
-    # Start recording (non-blocking, no limit)
-    termux-microphone-record -f "$AUDIO_FILE" -l 0
+    # Start recording (non-blocking, no limit) with AAC encoder for better compatibility
+    # Note: termux-microphone-record defaults to AAC encoder which creates m4a format
+    termux-microphone-record -f "$AUDIO_FILE" -l 0 -e aac
     
     # Wait for user input (no timeout)
     read -n1
@@ -135,6 +136,16 @@ api_speech_to_text() {
         return 1
     fi
     
+    # Debug: Check file before uploading
+    if [[ -f "$AUDIO_FILE" ]]; then
+        local file_size=$(stat -c%s "$AUDIO_FILE" 2>/dev/null)
+        local file_type=$(file -b "$AUDIO_FILE" 2>/dev/null)
+        echo "Debug: File size: ${file_size} bytes, Type: ${file_type}" >&2
+    else
+        echo "❌ Audio file does not exist: $AUDIO_FILE" >&2
+        return 1
+    fi
+    
     local response
     response=$(curl -s -X POST "https://api.openai.com/v1/audio/transcriptions" \
         -H "Authorization: Bearer $OPENAI_API_KEY" \
@@ -142,10 +153,20 @@ api_speech_to_text() {
         -F "model=whisper-1")
     
     if [[ $? -eq 0 ]]; then
-        echo "$response" | jq -r '.text // empty'
+        local transcribed_text
+        transcribed_text=$(echo "$response" | jq -r '.text // empty')
+        
+        if [[ -z "$transcribed_text" || "$transcribed_text" == "null" ]]; then
+            echo "❌ API returned empty transcription" >&2
+            echo "Response: $response" >&2
+            return 1
+        fi
+        
+        echo "$transcribed_text"
         return 0
     else
         echo "❌ API transcription failed" >&2
+        echo "Response: $response" >&2
         return 1
     fi
 }
@@ -424,15 +445,24 @@ parse_claude_response() {
     
     # Create TTS version with code blocks removed and markdown filtered
     TTS_CONTENT=$(echo "$FULL_CONTENT" | \
-        sed '/```/,/```/d' | \                    # Remove code blocks (```...```)
-        sed 's/\*\*\([^*]*\)\*\*/\1/g' | \       # Remove bold (**text** -> text)
-        sed 's/\*\([^*]*\)\*/\1/g' | \           # Remove italic (*text* -> text)
-        sed 's/__\([^_]*\)__/\1/g' | \           # Remove bold (__text__ -> text)
-        sed 's/_\([^_]*\)_/\1/g' | \             # Remove italic (_text_ -> text)
-        sed 's/~~\([^~]*\)~~/\1/g' | \           # Remove strikethrough (~~text~~ -> text)
-        sed 's/^#\+[ ]*//' | \                   # Remove headers (### Header -> Header)
-        sed 's/^[-*+][ ]*//' | \                 # Remove bullet points (- item -> item)
-        sed 's/`\([^`]*\)`/\1/g' \               # Remove inline code (`code` -> code)
+        # Remove code blocks (```...```)
+        sed '/```/,/```/d' | \
+        # Remove bold (**text** -> text)
+        sed 's/\*\*\([^*]*\)\*\*/\1/g' | \
+        # Remove italic (*text* -> text)
+        sed 's/\*\([^*]*\)\*/\1/g' | \
+        # Remove bold (__text__ -> text)
+        sed 's/__\([^_]*\)__/\1/g' | \
+        # Remove italic (_text_ -> text)
+        sed 's/_\([^_]*\)_/\1/g' | \
+        # Remove strikethrough (~~text~~ -> text)
+        sed 's/~~\([^~]*\)~~/\1/g' | \
+        # Remove headers (### Header -> Header)
+        sed 's/^#\+[ ]*//' | \
+        # Remove bullet points (- item -> item)
+        sed 's/^[-*+][ ]*//' | \
+        # Remove inline code (`code` -> code)
+        sed 's/`\([^`]*\)`/\1/g' \
         2>/dev/null || echo "$FULL_CONTENT")
 }
 
