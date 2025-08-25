@@ -246,6 +246,97 @@ check_dev_connection() {
     fi
 }
 
+# Install mobile-voice-coding output style on development machine
+install_output_style() {
+    echo "📋 Installing mobile-voice-coding output style..."
+    
+    # Create the output style content
+    local output_style_content
+    output_style_content=$(cat << 'STYLE_EOF'
+---
+description: Voice-first mobile coding assistant for Termux with speech-friendly responses and clear before/after code examples
+---
+
+You are a voice coding assistant on Termux mobile terminal. User speaks requests that get transcribed and sent via SSH. Your response is read aloud (except code blocks) then displayed visually. User has no code editor so you must describe changes clearly.
+
+## SPEECH-OPTIMIZED GUIDELINES:
+
+- NO MARKDOWN in speech portions - no asterisks, hashtags, bullets, bold, italic, underlines, or any formatting
+- Use brief conversational text that sounds natural when spoken aloud
+- Put ALL code blocks at the VERY END with proper markdown fences and language IDs
+- Before any code block, provide a clear description of what the code does
+- Keep it brief, but not at the cost of clarity
+- Break complex tasks into small voice-friendly steps
+- Focus each interaction on ONE specific change
+
+## TWO OPERATION MODES:
+
+**PLAN MODE** (analyze and propose without making changes):
+- Show current code state
+- Propose one small specific change
+- Ask for confirmation before proceeding
+- Explain the reasoning in conversational terms
+
+**EDIT MODE** (implement changes directly):
+- Make the single requested change using tools
+- Briefly explain what was changed in human terms
+- Show the updated code at the end
+
+## RESPONSE STRUCTURE:
+
+1. **Spoken explanation** (conversational, no markdown)
+2. **Code blocks** (at the very end, properly formatted)
+
+## EXAMPLE INTERACTIONS:
+
+**Plan Mode Response:**
+"I found the login function in auth dot js on line 45. Right now it only checks if the username exists but completely ignores the password parameter. It just returns true whenever it finds a valid username. I can add a simple password comparison right after the username check. Should I proceed with this change?"
+
+```js
+function login(username, password) {
+    if (validateUser(username)) {
+        return true;  // ignores password completely
+    }
+    return false;
+}
+```
+
+**Edit Mode Response:**
+"I added the password validation after the username check. Now both the username and password must be correct to return true. The function will only succeed when both validations pass."
+
+```js
+function login(username, password) {
+    if (validateUser(username) && password === "secret123") {
+        return true;
+    }
+    return false;
+}
+```
+
+## ADDITIONAL REQUIREMENTS:
+
+- If transcription is unclear, say "Could you repeat that? I heard X but want to make sure"
+- Always show before and after code when making changes
+- Use tools appropriately for software engineering tasks - read files before editing, validate syntax, run tests when available
+- Break large refactors into multiple small voice interactions
+- Explain file structure and navigation when user asks about project layout
+- Remember this is mobile coding - keep it brief and focused
+
+STYLE_EOF
+)
+    
+    # Upload and install the output style
+    ssh -i "$SSH_KEY" "$DEV_HOST" "mkdir -p ~/.claude/output-styles && cat > ~/.claude/output-styles/mobile-voice-coding.md" <<< "$output_style_content"
+    
+    if [[ $? -eq 0 ]]; then
+        echo "✅ Mobile-voice-coding output style installed"
+        return 0
+    else
+        echo "❌ Failed to install output style"
+        return 1
+    fi
+}
+
 # Test Claude Code availability
 test_claude_code() {
     echo "🧪 Testing Claude Code on development machine..."
@@ -284,75 +375,18 @@ query_claude() {
     local escaped_prompt
     escaped_prompt=$(printf '%q' "$prompt")
     
-    # Execute Claude Code on development machine with context about voice coding
-    local system_prompt
-    system_prompt=$(cat << 'EOF'
-You are a voice coding assistant on Termux mobile terminal.
-User speaks requests that get transcribed and sent via SSH.
-Your response is read aloud except code blocks then displayed visually.
-User has no code editor so you must make all changes via available tools.
-
-KEY GUIDELINES:
-- Keep responses conversational and concise (will be spoken aloud)
-- Put code blocks at END with proper markdown fences and language IDs  
-- Avoid markdown formatting in speech (*, #, bullets sound awkward)
-- Describe code in human terms, not technical details
-- Break complex tasks into small voice-friendly steps
-- Focus each interaction on ONE specific change
-- Provide detailed explanations of code logic and flow (like thorough comments would) so user can reason about changes without code editor access
-
-TWO MODES (toggle with M key):
-
-PLAN MODE - Analyze and propose without making changes:
-• High-level: Break complex requests into todo steps
-• Iterative: Show current code, propose one small change, ask confirmation
-
-EDIT MODE implements changes directly. Make the single requested change using tools. Briefly explain what was changed. Show the updated code at the end.
-
-EXAMPLES:
-
-Plan Mode:
-User: "Add password validation to login"
-Response: "Found the login function in auth.js line 45. Currently it calls validateUser but does not handle the password parameter at all, just returns true if username exists. I can add a simple password comparison right after the username check. Should I proceed?"
-
-```js
-function login(username, password) {
-    if (validateUser(username)) {
-        return true;  // ignores password completely
-    }
-    return false;
-}
-```
-
-Edit Mode:
-User: "Yes, add password check"
-Response: "Added password validation after username check. Now both username and password must be correct to return true."
-
-```js
-function login(username, password) {
-    if (validateUser(username) && password === "secret123") {
-        return true;
-    }
-    return false;
-}
-```
-
-If transcription is unclear, ask could you repeat that, I heard X but want to make sure.
-
-Remember no markdown formatting in spoken responses. Always put code blocks at the very end. Break complex requests into single small changes per interaction.
-EOF
-)
-    
+    # Use mobile-voice-coding output style for voice coding context
     local claude_response
     local claude_command
+    local settings_json='{"outputStyle": "mobile-voice-coding"}'
     
     # Determine if we should start a new session or resume existing one
     if [[ -z "$CLAUDE_SESSION_ID" ]]; then
         # First call - start new session and capture session ID
-        claude_command="cd $DEV_CWD && $CLAUDE --print $escaped_prompt --permission-mode $PERMISSION_MODE --output-format json --append-system-prompt '$system_prompt'"
+        claude_command="cd $DEV_CWD && $CLAUDE --print $escaped_prompt --permission-mode $PERMISSION_MODE --output-format json --settings '$settings_json'"
     else
         # Subsequent calls - resume existing session
-        claude_command="cd $DEV_CWD && $CLAUDE --print $escaped_prompt --resume '$CLAUDE_SESSION_ID' --permission-mode $PERMISSION_MODE --output-format json --append-system-prompt '$system_prompt'"
+        claude_command="cd $DEV_CWD && $CLAUDE --print $escaped_prompt --resume '$CLAUDE_SESSION_ID' --permission-mode $PERMISSION_MODE --output-format json --settings '$settings_json'"
     fi
     
     claude_response=$(ssh -i "$SSH_KEY" "$DEV_HOST" "$claude_command" < /dev/null 2>/dev/null)
@@ -388,8 +422,18 @@ parse_claude_response() {
     # Extract full text content from Claude Code SDK format (with code blocks for display)
     FULL_CONTENT=$(jq -r '.result // empty' "$RESPONSE_FILE" 2>/dev/null)
     
-    # Create TTS version with code blocks removed
-    TTS_CONTENT=$(echo "$FULL_CONTENT" | sed '/```/,/```/d' 2>/dev/null || echo "$FULL_CONTENT")
+    # Create TTS version with code blocks removed and markdown filtered
+    TTS_CONTENT=$(echo "$FULL_CONTENT" | \
+        sed '/```/,/```/d' | \                    # Remove code blocks (```...```)
+        sed 's/\*\*\([^*]*\)\*\*/\1/g' | \       # Remove bold (**text** -> text)
+        sed 's/\*\([^*]*\)\*/\1/g' | \           # Remove italic (*text* -> text)
+        sed 's/__\([^_]*\)__/\1/g' | \           # Remove bold (__text__ -> text)
+        sed 's/_\([^_]*\)_/\1/g' | \             # Remove italic (_text_ -> text)
+        sed 's/~~\([^~]*\)~~/\1/g' | \           # Remove strikethrough (~~text~~ -> text)
+        sed 's/^#\+[ ]*//' | \                   # Remove headers (### Header -> Header)
+        sed 's/^[-*+][ ]*//' | \                 # Remove bullet points (- item -> item)
+        sed 's/`\([^`]*\)`/\1/g' \               # Remove inline code (`code` -> code)
+        2>/dev/null || echo "$FULL_CONTENT")
 }
 
 # Display response using bat for markdown formatting
@@ -498,7 +542,7 @@ show_status() {
     local mode_status
     mode_status=$(get_mode_status)
     
-    echo "Voice Coding Assistant | $connection_status | $session_status | $mode_status | [SPACE=Record C=ChangeDir M=Mode R=Reset Q=Quit]"
+    echo "Voice Coding Assistant | $connection_status | $session_status | $mode_status | [SPACE=record C=cd M=mode R=reset S=ssh Q=quit]"
 }
 
 
@@ -588,6 +632,22 @@ change_directory() {
     fi
 }
 
+# SSH into development machine
+ssh_to_dev() {
+    echo "🔗 Opening SSH connection to development machine..."
+    echo "📁 Working directory: $DEV_CWD"
+    echo "🖥️  Host: $DEV_HOST"
+    echo
+    echo "Press Ctrl+D or type 'exit' to return to voice assistant"
+    echo "────────────────────────────────────────────────────────────"
+    
+    # Open interactive SSH session with automatic directory change
+    ssh -i "$SSH_KEY" -t "$DEV_HOST" "cd '$DEV_CWD' && exec \$SHELL -l"
+    
+    echo "────────────────────────────────────────────────────────────"
+    echo "🔙 Returned to voice coding assistant"
+}
+
 # Cleanup on exit
 cleanup() {
     show_cursor
@@ -624,9 +684,10 @@ main_loop() {
             'c')  change_directory || true ;;
             'm')  cycle_permission_mode || true ;;
             'r')  reset_claude_session || true ;;
+            's')  ssh_to_dev || true ;;
             'q')  break ;;
             *)    
-                echo "Unknown command: '$REPLY' (Use SPACE, C, M, R, or Q)"
+                echo "Unknown command: '$REPLY' (Use SPACE, C, M, R, S, or Q)"
                 ;;
         esac
     done
@@ -656,6 +717,7 @@ INTERACTIVE COMMANDS (during voice session):
   C          Change working directory on dev machine
   M          Cycle between Plan mode (analyze/propose) and Edit mode (implement)
   R          Reset Claude session
+  S          SSH into development machine for manual tasks
   Q          Quit application
 
 DEVELOPMENT MODES:
@@ -838,7 +900,18 @@ setup_wizard() {
     fi
     
     echo
-    echo "4. Testing Setup"
+    echo "4. Output Style Installation"
+    read -p "Install mobile-voice-coding output style on dev machine? (y/n): " install_style
+    if [[ "$install_style" =~ ^[Yy]$ ]]; then
+        if ! install_output_style; then
+            echo "⚠️  Output style installation failed, will use default prompting"
+        fi
+    else
+        echo "Skipping output style installation - will use system prompts"
+    fi
+    
+    echo
+    echo "5. Testing Setup"
     if test_setup; then
         echo "✅ Setup completed successfully!"
         echo "Run '$0 start' to begin voice coding"
