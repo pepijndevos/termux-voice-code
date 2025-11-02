@@ -38,7 +38,7 @@ claude --version
 **In Termux:**
 ```bash
 # Install required packages
-pkg install python openssh termux-api
+pkg install python openssh termux-api rust
 
 # Install Termux:API app from F-Droid
 # Grant microphone and TTS permissions in Android settings
