@@ -1,0 +1,32 @@
+# Voice-enabled Claude TUI Configuration
+# Copy this file to voice_config.ini and edit with your settings
+
+[ssh]
+# SSH connection to your development machine
+host = your-dev-machine.local
+user = your-username
+key_path = ~/.ssh/termux_coding
+
+# Default working directory on dev machine (optional, can override via CLI argument)
+# Usage: python claude_voice.py ~/different/project
+dev_path = /path/to/your/project
+
+[claude]
+# Path to Claude Code binary on your dev machine
+path = ~/.local/bin/claude
+
+[openai]
+# OpenAI API key for Whisper transcription
+# Get your key from https://platform.openai.com/api-keys
+api_key = sk-proj-...
+
+[tts]
+# Text-to-speech settings (used by termux-tts-speak)
+# pitch: 0.5 to 2.0 (default 1.0)
+# rate: 0.5 to 2.0 (default 1.0)
+pitch = 1.0
+rate = 1.0
+
+[mcp]
+# Port for MCP server to listen on (localhost only)
+port = 8765
