@@ -24,6 +24,8 @@ import tempfile
 import time
 import pty
 import socket
+import struct
+import fcntl
 from pathlib import Path
 from configparser import ConfigParser
 from typing import Optional
@@ -201,16 +203,51 @@ class ClaudeVoiceTUI:
         self.config = Config(config_path)
         self.voice_handler = VoiceInputHandler(self.config)
         self.working_dir = working_dir  # Override for dev_path from CLI
+        self.master_fd = None  # PTY master file descriptor for terminal size updates
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGWINCH, self._handle_sigwinch)
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals"""
         print("\n\nShutting down...", file=sys.stderr)
         self.cleanup()
         sys.exit(0)
+
+    def _get_terminal_size(self):
+        """Get current terminal size"""
+        try:
+            size = struct.pack('HHHH', 0, 0, 0, 0)
+            size = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, size)
+            rows, cols = struct.unpack('HHHH', size)[:2]
+            return rows, cols
+        except:
+            return 24, 80  # Default fallback
+
+    def _set_terminal_size(self, fd, rows, cols):
+        """Set terminal size for child PTY"""
+        try:
+            size = struct.pack('HHHH', rows, cols, 0, 0)
+            fcntl.ioctl(fd, termios.TIOCSWINSZ, size)
+        except:
+            pass
+
+    def master_read(self, fd):
+        """Capture PTY master fd and read child output"""
+        if self.master_fd is None:
+            self.master_fd = fd
+            # Set initial terminal size
+            rows, cols = self._get_terminal_size()
+            self._set_terminal_size(self.master_fd, rows, cols)
+        return os.read(fd, 1024)
+
+    def _handle_sigwinch(self, signum, frame):
+        """Handle terminal size changes"""
+        if self.master_fd is not None:
+            rows, cols = self._get_terminal_size()
+            self._set_terminal_size(self.master_fd, rows, cols)
 
     def get_mcp_config(self) -> dict:
         """Generate MCP configuration for Claude"""
@@ -346,7 +383,7 @@ class ClaudeVoiceTUI:
 
             # Use pty.spawn() for proper terminal handling
             # This automatically handles all PTY setup and cleanup
-            pty.spawn(ssh_cmd, stdin_read=self.stdin_read)
+            pty.spawn(ssh_cmd, master_read=self.master_read, stdin_read=self.stdin_read)
 
         except KeyboardInterrupt:
             print("\n\nInterrupted by user", file=sys.stderr)

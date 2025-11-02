@@ -1,0 +1,60 @@
+# Claude Code SDK - PDK Mode Analysis & Improvement Ideas
+
+## Current Behavior Observed
+
+### Normal Mode
+- Edit tool pauses execution, asks user for confirmation
+- User accepts/rejects, then Claude receives success/rejection message
+- Natural pause/resume flow
+
+### PDK Mode  
+- Edit tool returns permission denial but Claude continues executing
+- User grants permission via `--allowedTools Edit` 
+- Claude is NOT notified of permission changes automatically
+- Must be explicitly told or retry the operation
+
+## Problems with Current PDK Implementation
+
+1. **No notification of permission changes** - Claude continues unaware permissions changed
+2. **Clunky retry pattern** - App monitors `permission_denials`, retries with `--allowedTools`
+3. **No graceful pause/resume** - Unlike normal mode, no natural stopping point
+4. **Poor UX for confirmation workflows** - Claude sees "failed, then worked" rather than "pending, then approved"
+
+## Proposed Solution: Pause/Resume Semantics
+
+```bash
+# Tool gets denied → conversation exits immediately  
+claude -p "make this edit"
+# Returns with permission_denial, stops execution
+
+# User decides and resumes with permission
+claude --resume --allowedTools Edit
+
+# OR user decides against and continues without that action
+claude --resume
+```
+
+### Benefits
+- Natural pause points for user decision-making
+- Explicit resume semantics vs hidden retries  
+- Better UX matching interactive confirmation flow
+- Cleaner application logic - no monitor/retry needed
+
+## Alternative: Confirmation Mode
+
+```bash
+claude -p "make this edit" --confirm-tools
+# Pauses on each tool use, returns "confirmation_required"
+
+claude --continue-with-approval  # or --continue-with-denial
+```
+
+## Use Case: Termux Voice Coding Assistant
+
+Current workaround: System prompt to ask permission
+Ideal: Pause on edits/shell commands, voice prompt "Allow this edit?", resume based on response
+
+## Next Steps
+- Consider filing feature request for pause/resume semantics
+- Explore workarounds for current implementation  
+- Test with shell command confirmations
