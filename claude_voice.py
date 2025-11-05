@@ -26,6 +26,7 @@ import pty
 import socket
 import struct
 import fcntl
+import shlex
 from pathlib import Path
 from configparser import ConfigParser
 from typing import Optional
@@ -199,10 +200,11 @@ class VoiceInputHandler:
 class ClaudeVoiceTUI:
     """Main application: SSH to Claude with voice input support"""
 
-    def __init__(self, config_path: str = "voice_config.ini", working_dir: Optional[str] = None):
+    def __init__(self, config_path: str = "voice_config.ini", working_dir: Optional[str] = None, continue_session: bool = False):
         self.config = Config(config_path)
         self.voice_handler = VoiceInputHandler(self.config)
         self.working_dir = working_dir  # Override for dev_path from CLI
+        self.continue_session = continue_session  # Whether to continue previous Claude session
         self.master_fd = None  # PTY master file descriptor for terminal size updates
 
         # Setup signal handlers
@@ -282,7 +284,7 @@ class ClaudeVoiceTUI:
         return ip
 
     def build_ssh_command(self):
-        """Build SSH command for Claude"""
+        """Build SSH command for Claude with tmux session management"""
         ssh_key = os.path.expanduser(self.config.get('ssh', 'key_path'))
         ssh_host = self.config.get('ssh', 'host')
         ssh_user = self.config.get('ssh', 'user')
@@ -294,14 +296,29 @@ class ClaudeVoiceTUI:
         mcp_config = self.get_mcp_config()
         mcp_json = json.dumps(mcp_config)
 
-        # SSH command to run Claude with MCP config
+        # Build Claude command with optional --continue flag
         system_prompt = "IMPORTANT: After providing your response to the user, use the mcp__termux-tts__speak tool to speak a concise vocal summary (1-2 sentences) of your reply. This helps the user understand your response through voice feedback."
+
+        # Build Claude arguments with proper shell quoting
+        claude_args = f"--mcp-config {shlex.quote(mcp_json)} --append-system-prompt {shlex.quote(system_prompt)}"
+        if self.continue_session:
+            claude_args += " --continue"
+
+        claude_cmd = f"cd {shlex.quote(dev_path)} && {claude_path} {claude_args}"
+
+        # Tmux session name
+        tmux_session = "claude-voice"
+
+        # Build tmux command: try to attach to existing session, or create new one
+        tmux_cmd = f"tmux attach-session -t {tmux_session} || tmux new-session -s {tmux_session} {shlex.quote(claude_cmd)}"
+
+        # SSH command to run Claude in tmux
         return [
             'ssh',
             '-i', ssh_key,
             '-t',  # Force TTY allocation
             f'{ssh_user}@{ssh_host}',
-            f'cd {dev_path} && {claude_path} --mcp-config \'{mcp_json}\' --append-system-prompt \'{system_prompt}\''
+            tmux_cmd
         ]
 
     def stdin_read(self, fd):
@@ -423,10 +440,16 @@ Examples:
         default='voice_config.ini',
         help='Path to config file (default: voice_config.ini)'
     )
+    parser.add_argument(
+        '--continue',
+        dest='continue_session',
+        action='store_true',
+        help='Continue previous Claude session (passed to Claude)'
+    )
 
     args = parser.parse_args()
 
-    app = ClaudeVoiceTUI(args.config, working_dir=args.path)
+    app = ClaudeVoiceTUI(args.config, working_dir=args.path, continue_session=args.continue_session)
     app.run()
 
 
